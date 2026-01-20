@@ -27,7 +27,7 @@ D'après la documentation technique fournie par la Direction Centrale de la Poli
 ### 1.3 Présentation du jeu de données démographiques (INSEE)
 Pour affiner l'analyse territoriale, nous avons intégré un référentiel de population issu des estimations de l'INSEE. Ce jeu de données permet de contextualiser la délinquance par rapport à la densité démographique.
 
-* **Fichier source :** `DS_ESTIMATION_POPULATION_metadata.csv`
+* **Fichier source :** `population_by_dept_year.csv`
 * **Contenu technique :**
     * **Dimensions Géographiques :** Codes et libellés officiels des départements (ex: `91` pour l'Essonne, `974` pour La Réunion).
     * **Granularité par Âge :** Les données sont segmentées par tranches d'âge (ex: `Y15T19` pour les 15-19 ans), ce qui permettrait, à terme, d'analyser la criminalité au regard de la pyramide des âges locale.
@@ -61,7 +61,19 @@ Le modèle doit permettre de répondre aux exigences métiers de la DGDSN :
 ![Modèle Conceptuel des Données - Analyse Crimes](./MCD.png)
 *Figure 1 : Modèle Conceptuel des Données (MCD) intégrant les statistiques 4001 et les données INSEE.*
 
-### 2.3 Chargement en Base Relationnelle (Pivot)
+### 2.3 Modèle Logique de Données (MLD)
+Le passage du conceptuel au logique se traduit par une architecture en **schéma en étoile**. Cette structure est conçue pour isoler les indicateurs chiffrés (les faits) des axes d'analyse (les dimensions).
+
+#### Structure des Tables
+* **Table de Faits (`FAITS_CRIMINELS`)** : Contient les volumes de crimes, liée par clés étrangères aux dimensions.
+* **Dimensions (`DIM_INFRACTIONS`, `DIM_DEPARTEMENTS`, `DIM_SERVICES`, `DIM_TEMPS`)** : Stockent les libellés et les caractéristiques fixes (ex: nom du département, type de service PN/GN).
+* **Table Contextuelle (`STAT_POPULATION`)** : Stocke les estimations de population INSEE par département et par année pour permettre le calcul de ratios de victimation.
+
+![Schéma Logique de Données en Étoile - Architecture Relationnelle](lien_vers_votre_capture_MLD.png)
+
+*Figure 2 : Traduction logique du modèle en schéma en étoile.*
+
+### 2.4 Chargement en Base Relationnelle (Pivot)
 Avant la migration vers le graphe, les données sont injectées dans une base SQL (SGBDR) pour servir de socle de référence. Ce modèle pivot est structuré comme suit :
 
 * **Table `Services` :** Stocke le type de service (Police/Gendarmerie) et son rattachement géographique.
