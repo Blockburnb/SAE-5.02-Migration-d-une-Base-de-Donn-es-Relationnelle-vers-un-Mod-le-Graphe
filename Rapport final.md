@@ -24,27 +24,55 @@ D'après la documentation technique fournie par la Direction Centrale de la Poli
 * **Entités géographiques :** Répartition par départements (codes et libellés).
 * **Volume d'activité :** Nombre de faits constatés par index de criminalité.
 
-### 1.3 Enrichissement
-Pour transformer ce dataset tabulaire en un véritable outil d'intelligence territoriale, nous avons enrichi le modèle avec des sources de données externes :
+### 1.3 Présentation du jeu de données démographiques (INSEE)
+Pour affiner l'analyse territoriale, nous avons intégré un référentiel de population issu des estimations de l'INSEE. Ce jeu de données permet de contextualiser la délinquance par rapport à la densité démographique.
 
-1.  **Adjacences Géographiques (Topologie) :** Intégration des relations de voisinage entre départements. Cette donnée est cruciale pour le modèle graphe afin de détecter des phénomènes de propagation de la délinquance entre territoires limitrophes.
-2.  **Données Démographiques (INSEE) :** Ajout de la population par département pour transformer les volumes bruts en **taux de criminalité** (nombre de faits pour 1000 habitants).
-3.  **Indicateurs Socio-économiques :** Intégration facultative du revenu médian par zone pour permettre des analyses de corrélation entre contexte économique et types de délits enregistrés.
+* **Fichier source :** `DS_ESTIMATION_POPULATION_metadata.csv`
+* **Contenu technique :**
+    * **Dimensions Géographiques :** Codes et libellés officiels des départements (ex: `91` pour l'Essonne, `974` pour La Réunion).
+    * **Granularité par Âge :** Les données sont segmentées par tranches d'âge (ex: `Y15T19` pour les 15-19 ans), ce qui permettrait, à terme, d'analyser la criminalité au regard de la pyramide des âges locale.
+    * **Indicateurs de Genre :** Distinction Hommes/Femmes pour des analyses démographiques croisées.
+
+**Valeur ajoutée pour le projet :**
+L'intégration de ces métadonnées dans Neo4j permet de créer des propriétés `population` sur nos nœuds `:Departement`. Cela rend possible le calcul dynamique du **taux de victimation** directement en langage Cypher, offrant ainsi une vision bien plus précise de la réalité de l'insécurité sur le terrain.
 
 ---
 
-## 2. Processus ETL (Extract, Transform, Load)
-Avant la migration vers Neo4j, une phase d'ETL est indispensable pour nettoyer et structurer la donnée.
+## 2. Processus ETL (Extract, Transform, Load) et Modélisation
 
-### 2.1 Nettoyage et Normalisation
-Nous utilisons un script Python (Pandas) pour :
-1. **Fusionner** les 20 fichiers en un référentiel unique.
-2. **Normaliser** les noms de colonnes (suppression des espaces et caractères spéciaux).
-3. **Dédoublonner** les types d'infractions.
+Le passage de fichiers sources hétérogènes (Excel, CSV, Metadata) à une base de connaissances exploitable nécessite une phase d'ETL rigoureuse pour garantir la qualité des analyses futures.
+
+### 2.1 Nettoyage et Normalisation des Données
+Nous utilisons un script **Python (Pandas)** pour transformer la donnée brute en donnée structurée :
+
+1.  **Réunification du socle sécuritaire :** Fusion des 20 fichiers annuels (PN et GN) en une table unique, en alignant les index de la nomenclature **État 4001**.
+2.  **Traitement des métadonnées démographiques :** Nettoyage du fichier `DS_ESTIMATION_POPULATION_metadata.csv` pour extraire les populations par département.
+3.  **Normalisation technique :** * Suppression des caractères spéciaux et uniformisation des noms de colonnes.
+    * Gestion des types : conversion des volumes de faits et des chiffres de population en entiers (`int`).
+    * Alignement des codes géographiques (ex: traitement du code `2A/2B` pour la Corse et des codes Outre-mer).
+
+### 2.2 Cahier des Charges du Modèle Conceptuel (MCD)
+Le modèle doit permettre de répondre aux exigences métiers de la DGDSN :
+* **Axe Temporel :** Comparer l'évolution de la délinquance sur 10 ans.
+* **Axe Territorial :** Ventiler les crimes par département et par type de zone (urbaine pour la PN, rurale pour la GN).
+* **Axe de Performance :** Calculer des taux de criminalité grâce au croisement avec les données de population INSEE.
 
 
-### 2.2 Chargement en Base Relationnelle (Pivot)
-Avant le graphe, les données sont stockées dans un modèle relationnel classique (SQL) pour servir de point de comparaison.
+![Modèle Conceptuel des Données - Analyse Crimes](./MCD.png)
+*Figure 1 : Modèle Conceptuel des Données (MCD) intégrant les statistiques 4001 et les données INSEE.*
+
+### 2.3 Chargement en Base Relationnelle (Pivot)
+Avant la migration vers le graphe, les données sont injectées dans une base SQL (SGBDR) pour servir de socle de référence. Ce modèle pivot est structuré comme suit :
+
+* **Table `Services` :** Stocke le type de service (Police/Gendarmerie) et son rattachement géographique.
+* **Table `Geographie` :** Centralise les noms de départements et leur **population totale** issue du fichier INSEE.
+* **Table `Nomenclature_4001` :** Référentiel des libellés d'infractions.
+* **Table `Faits_Criminels` :** Table de faits contenant les mesures (Quantité, Année) liant les services aux types de crimes.
+
+### 2.4 Analyse des limites du modèle Relationnel
+Bien que robuste pour le stockage, ce modèle montre des limites pour les analyses complexes demandées :
+* **Jointures coûteuses :** Calculer des corrélations entre population, chômage et crimes sur plusieurs départements voisins sature les ressources.
+* **Rigidité :** L'ajout de nouvelles dimensions géographiques (adjacences) complexifie inutilement le schéma SQL.
 
 ---
 
