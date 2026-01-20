@@ -1,50 +1,55 @@
 # Modèle Logique de Données (MLD)
 
-Ce modèle respecte une architecture en **Schéma en Étoile**, optimisée pour l'analyse multidimensionnelle des données de criminalité.
-
-**Légende de la notation :**
-
-* **NOM_TABLE** : Nom de la relation.
-* **Clé_Primaire** (en gras) : Identifiant unique de la ligne.
-* *#Clé_Etrangère* (en italique précédé d'un #) : Référence vers une autre table.
+Ce document décrit le modèle logique correspondant au fichier `schema_crimes.sql`.
 
 ---
 
-### 1. Les Dimensions (Axes d'analyse)
+## Tables et colonnes (conformes au SQL)
 
-Ces tables contiennent les données descriptives (le "Qui", "Où", "Quand").
+### DIM_INFRACTIONS
+- id_infraction (INTEGER) — Clé primaire
+- libelle (VARCHAR(255), NOT NULL)
 
-* **DIM_INFRACTIONS** (**code_index**, libelle_index)
-* **DIM_DEPARTEMENTS** (**code_dept**, nom_dept)
-* **DIM_SERVICES** (**id_service**, nom_unite, type_service, perimetre)
-* **DIM_TEMPS** (**annee**)
+### DIM_DEPARTEMENTS
+- code_dept (VARCHAR(3)) — Clé primaire (ex: '01', '2A', '974')
 
-### 2. La Table de Faits (Cœur du modèle)
+### DIM_SERVICES
+- id_service (INTEGER, PRIMARY KEY AUTOINCREMENT)
+- type_service (VARCHAR(10))
+- nom_unite (VARCHAR(255))
+- perimetre (VARCHAR(100))
 
-Cette table centrale contient les métriques et les liens vers les dimensions.
+### DIM_TEMPS
+- annee (INTEGER) — Clé primaire
 
-* **FAITS_CRIMINELS** (**id_fait**, nombre_faits, *#code_index*, *#id_service*, *#code_dept*, *#annee*)
+### FAITS_CRIMINELS
+- id_fait (INTEGER, PRIMARY KEY AUTOINCREMENT)
+- annee (INT, NOT NULL)
+- nombre_faits (INT, DEFAULT 0)
+- id_infraction (INT) — FK → DIM_INFRACTIONS(id_infraction)
+- code_dept (VARCHAR(3)) — FK → DIM_DEPARTEMENTS(code_dept)
+- id_service (INT) — FK → DIM_SERVICES(id_service)
+- (FK annee → DIM_TEMPS(annee))
 
-### 3. Table Contextuelle
-
-Données démographiques utilisées pour le calcul de ratios (ex: crimes pour 1000 habitants).
-
-* **STAT_POPULATION** (**#code_dept**, **#annee**, population)
-* *Note : La clé primaire est composite (Département + Année).*
-
-
+### STAT_POPULATION
+- annee (INT)
+- code_dept (VARCHAR(3))
+- population (INT)
+- PRIMARY KEY (annee, code_dept)
+- FK code_dept → DIM_DEPARTEMENTS(code_dept)
+- FK annee → DIM_TEMPS(annee)
 
 ---
 
-### Dictionnaire des Données Simplifié
+## Remarques de correspondance
+- Les noms de colonnes du MLD ont été alignés sur ceux du script SQL : `code_index` et `libelle_index` deviennent respectivement `id_infraction` et `libelle` dans `DIM_INFRACTIONS`.
+- `DIM_DEPARTEMENTS` ne contient que `code_dept` comme PK (le `nom_dept` n'est pas présent dans le schéma SQL actuel).
+- `DIM_SERVICES` utilise un `id_service` auto-incrémenté (AUTOINCREMENT) — le mapping entre les lignes source et cet ID doit être établi après insertion (lecture de la table).
+- `STAT_POPULATION` a une clé primaire composite (`annee`, `code_dept`) conformément au SQL.
 
-| Table | Attribut | Type | Description |
-| --- | --- | --- | --- |
-| **DIM_INFRACTIONS** | `code_index` | INT | Index officiel (1 à 107) du type de crime. |
-|  | `libelle_index` | VARCHAR | Nom complet de l'infraction (ex: "Vols à main armée"). |
-| **DIM_DEPARTEMENTS** | `code_dept` | VARCHAR(3) | Code officiel (ex: '01', '2A', '974'). |
-| **DIM_SERVICES** | `id_service` | INT | Identifiant technique auto-incrémenté. |
-|  | `nom_unite` | VARCHAR | Nom de la brigade ou du commissariat (CSP). |
-|  | `type_service` | VARCHAR(2) | 'GN' (Gendarmerie) ou 'PN' (Police). |
-| **FAITS_CRIMINELS** | `nombre_faits` | INT | Quantité d'infractions constatées. |
-| **STAT_POPULATION** | `population` | INT | Nombre d'habitants pour l'année et le département donnés. |
+---
+
+Si tu veux, je peux aussi :
+- générer un diagramme ER à jour (image),
+- vérifier que les fichiers CSV contiennent bien les colonnes renommées (ex: `code_index` / `libelle_index`), ou
+- ajouter des contraintes d'unicité au SQL et aux imports pour éviter doublons.
