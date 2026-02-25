@@ -148,3 +148,7 @@ Relations (Option B — recommandé pour ton sujet, plus léger)
 (d)-[:POPULATION {annee, population}]->(:Annee) (ou vers Departement directement avec propriétés)
 
 Option B est souvent plus simple à requêter et plus rapide à importer.
+
+
+mots de passe neo4j : bande_organise
+
