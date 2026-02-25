@@ -92,8 +92,11 @@ Bien que robuste pour le stockage, ce modèle montre des limites pour les analys
 Nous faisons une restructuration du modèle logique relationnel vers un modèle orienté graphe.
 
 Contrairement à une base SQL où les relations sont implicites via des clés étrangères, Neo4j matérialise explicitement ces relations sous forme d’arêtes.
+
 ### 3.1 Conception du Schéma de Nœuds et Relations
 Le modèle retenu repose sur la transformation du schéma en étoile relationnel vers un modèle centré sur l’entité métier `Fait`.
+
+![Exemple de requête Graph](./Modèle_graph.png)
 
 **Les Nœuds :**
 * `:Infraction` (Ex: Vols, Violences).
@@ -144,6 +147,8 @@ MERGE (f)-[:OF_INFRACTION]->(i)
 MERGE (f)-[:BY_SERVICE]->(s)
 MERGE (f)-[:IN_YEAR]->(t)
 ```
+![Exemple de requête Graph](./exemple_requete.png)
+
 ## 4. Validation et Vérification de Cohérence
 
 Après migration, plusieurs contrôles ont été effectués :
