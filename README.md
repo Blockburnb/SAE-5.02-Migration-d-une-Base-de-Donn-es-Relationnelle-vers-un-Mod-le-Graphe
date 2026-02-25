@@ -1,4 +1,4 @@
-# SAE-5.02 — Migration d'une base relationnelle vers un modèle graphe
+# SAE-5.02 — Migration d'une base relationnelle vers un modèle graphe (groupe 2)
 
 ## Commanditaire
 Ministère de l’Intérieur — Direction Générale des Données et de la Sécurité Numérique
