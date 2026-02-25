@@ -1,0 +1,100 @@
+Requetes à mettre dans le markdown pour documenter, création des tables temporaires pour alimenter les tables finales : 
+
+DROP TABLE IF EXISTS stg_crimes;
+CREATE TABLE stg_crimes (
+  annee          INT,
+  service        TEXT,
+  departement    TEXT,
+  perimetre      TEXT,
+  csp            TEXT,
+  code_index     INT,
+  libelle_index  TEXT,
+  nombre_faits   INT
+);
+
+DROP TABLE IF EXISTS stg_population;
+CREATE TABLE stg_population (
+  departement TEXT,
+  annee       INT,
+  population  INT
+);
+
+
+Création des tables finales (voir le sql schemas_crimes.sql)
+
+Alimentation des tables finales : 
+
+INSERT INTO dim_infractions (id_infraction, libelle)
+SELECT
+  sc.code_index AS id_infraction,
+  MIN(sc.libelle_index) AS libelle
+FROM stg_crimes sc
+WHERE sc.code_index IS NOT NULL
+GROUP BY sc.code_index
+ON CONFLICT (id_infraction) DO UPDATE
+SET libelle = EXCLUDED.libelle;
+
+
+INSERT INTO dim_departements (code_dept)
+SELECT DISTINCT sc.departement
+FROM stg_crimes sc
+WHERE sc.departement IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+-- complète avec ceux qui viennent de la population (souvent '1' -> '01')
+INSERT INTO dim_departements (code_dept)
+SELECT DISTINCT LPAD(sp.departement::text, 2, '0')
+FROM stg_population sp
+WHERE sp.departement IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dim_temps (annee)
+SELECT DISTINCT sc.annee
+FROM stg_crimes sc
+WHERE sc.annee IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dim_temps (annee)
+SELECT DISTINCT sp.annee
+FROM stg_population sp
+WHERE sp.annee IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dim_services (type_service, nom_unite, perimetre)
+SELECT DISTINCT sc.service, sc.csp, sc.perimetre
+FROM stg_crimes sc
+WHERE sc.service IS NOT NULL;
+
+
+INSERT INTO stat_population (annee, code_dept, population)
+SELECT
+  sp.annee,
+  LPAD(sp.departement::text, 2, '0') AS code_dept,
+  MAX(sp.population) AS population
+FROM stg_population sp
+WHERE sp.annee IS NOT NULL
+  AND sp.departement IS NOT NULL
+GROUP BY sp.annee, LPAD(sp.departement::text, 2, '0')
+ON CONFLICT (annee, code_dept)
+DO UPDATE SET population = EXCLUDED.population;
+
+
+INSERT INTO faits_criminels (annee, nombre_faits, id_infraction, code_dept, id_service)
+SELECT
+  sc.annee,
+  sc.nombre_faits,
+  sc.code_index,
+  sc.departement,
+  ds.id_service
+FROM stg_crimes sc
+JOIN dim_services ds
+  ON ds.type_service = sc.service
+ AND ds.nom_unite    = sc.csp
+ AND ds.perimetre    = sc.perimetre;
+
+
+
+ Description de la bdd : 
+ 
+
+
