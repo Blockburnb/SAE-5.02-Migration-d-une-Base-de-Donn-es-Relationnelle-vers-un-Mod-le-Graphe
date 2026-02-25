@@ -89,156 +89,99 @@ Bien que robuste pour le stockage, ce modèle montre des limites pour les analys
 ---
 
 ## 3. Migration vers le Modèle Graphe (Neo4j)
-La migration n'est pas une simple copie, c'est une **transformation structurelle**.
+Nous faisons une restructuration du modèle logique relationnel vers un modèle orienté graphe.
 
+Contrairement à une base SQL où les relations sont implicites via des clés étrangères, Neo4j matérialise explicitement ces relations sous forme d’arêtes.
 ### 3.1 Conception du Schéma de Nœuds et Relations
-Contrairement au SQL, nous modélisons les entités comme des objets interconnectés.
+Le modèle retenu repose sur la transformation du schéma en étoile relationnel vers un modèle centré sur l’entité métier `Fait`.
 
-**Les Nœuds (Entités) :**
-* `:TypeCrime` (Ex: Vols, Violences).
+**Les Nœuds :**
+* `:Infraction` (Ex: Vols, Violences).
 * `:Departement` (Ex: 75, 13).
 * `:Service` (Police ou Gendarmerie).
 * `:Annee` (2012...2021).
+* `:Fait` (nombre de faits d’une infraction donnée, constatés par un service, dans un département et une année donnée.)
 
-**Les Relations (Actions) :**
-* `(Service)-[:ENREGISTRE {quantite: Int}]->(TypeCrime)`
-* `(Service)-[:EST_RATTACHE_A]->(Departement)`
-* `(Departement)-[:EST_LIMITROPHE_DE]->(Departement)`
+**Les Relations :**
+* `(Departement)-[:HAS_FACT]->(Fait)`
+* `(Fait)-[:OF_INFRACTION]->(Infraction)`
+* `(Fait)-[:BY_SERVICE]->(Service)`
+* `(Fait)-[:IN_YEAR]->(Annee)`
 
+### 3.2 Justification du choix du nœud Fait
+Deux approches étaient possibles :
+1. Stocker nombre_faits comme propriété sur une relation.
+2. Créer un nœud intermédiaire Fait.
 
+Nous avons retenu la seconde option pour :
 
-### 3.2 Stratégie de Migration Technique
-La migration est effectuée via la commande `LOAD CSV` de Neo4j ou un driver Python.
+* Conserver la granularité temporelle
+* Faciliter les agrégations
+* Permettre des extensions futures (ex : ajout d’un taux, indicateurs contextuels)
+* Éviter des relations multi-propriétés complexes
 
-**Logique de migration :**
-1. Création des contraintes d'unicité (ID crime, code département).
-2. Importation des nœuds maîtres (Départements et Crimes).
-3. Création des relations avec propriétés (le nombre de faits est stocké directement sur le lien entre le service et le crime).
+Ce choix permet une meilleure lisibilité et une évolutivité accrue du modèle.
+### 3.3 Stratégie de Migration Technique
+La migration a été réalisée via un script Python utilisant :
+
+* psycopg2 pour l’extraction depuis PostgreSQL
+* neo4j-driver pour l’injection via Bolt
+
+Le processus s’est déroulé en plusieurs étapes :
+
+1. Création des contraintes d’unicité
+2. Import des dimensions (Départements, Infractions, Services, Années)
+3. Création des nœuds Fait
+4. Création des relations via MERGE
+
+Exemple d’instruction Cypher utilisée :
 
 ```cypher
-import os
-import pandas as pd
-
-INFILE = 'DS_ESTIMATION_POPULATION_data.csv'
-AGG_OUT = 'population_by_dept_year.csv'
-
-def read_raw(path):
-    # lire en forçant le séparateur ';' et le quotechar '"'
-    df = pd.read_csv(path, sep=';', quotechar='"', engine='python', dtype=str)
-    return df
-
-
-def clean_headers(df):
-    # noms lisibles
-    col_map = {
-        'AGE': 'age_group',
-        'EP_MEASURE': 'measure',
-        'FREQ': 'freq',
-        'GEO': 'geo',
-        'GEO_OBJECT': 'geo_object',
-        'REF_PERIOD': 'ref_period',
-        'SEASONAL_ADJUST': 'seasonal_adjust',
-        'SEX': 'sex',
-        'UNIT_MEASURE': 'unit',
-        'DECIMALS': 'decimals',
-        'OBS_STATUS': 'obs_status',
-        'OBS_STATUS_FR': 'obs_status_fr',
-        'UNIT_MULT': 'unit_mult',
-        'TIME_PERIOD': 'year',
-        'OBS_VALUE': 'value'
-    }
-    # nettoyer espaces autour des noms de colonnes
-    df = df.rename(columns=lambda c: c.strip())
-    # appliquer mapping si possible
-    for k, v in col_map.items():
-        if k in df.columns:
-            df = df.rename(columns={k: v})
-    return df
-
-
-def write_clean(df, out):
-    df.to_csv(out, index=False, encoding='utf-8')
-    print(f"Fichier nettoyé écrit: {out} (lignes: {len(df)})")
-
-
-def aggregate_dept_year(df):
-    # filtrer les lignes de niveau département
-    df_dep = df[df['geo_object'] == 'DEP'].copy()
-    if df_dep.empty:
-        raise RuntimeError('Aucune ligne départementale trouvée (geo_object != DEP)')
-    # convertir types
-    df_dep['year'] = pd.to_numeric(df_dep['year'], errors='coerce').astype('Int64')
-    df_dep['value'] = pd.to_numeric(df_dep['value'].str.replace(',', '.'), errors='coerce').fillna(0)
-    # pivot par sex
-    pivot = df_dep.pivot_table(index=['geo', 'year'], columns='sex', values='value', aggfunc='sum', fill_value=0)
-    pivot = pivot.reset_index()
-    # calculer population : priorité à _T si présent, sinon M+F
-    def compute_pop(row):
-        if '_T' in row.index and pd.notna(row.get('_T')) and row.get('_T') > 0:
-            return int(round(row.get('_T')))
-        m = row.get('M', 0) if 'M' in row.index else 0
-        f = row.get('F', 0) if 'F' in row.index else 0
-        # d'autres sexes possibles : sommation de toutes colonnes non geo/year
-        other = 0
-        for k in row.index:
-            if k not in ('geo', 'year', 'M', 'F', '_T'):
-                try:
-                    other += float(row.get(k) or 0)
-                except Exception:
-                    pass
-        total = m + f + other
-        return int(round(total))
-    pivot['population'] = pivot.apply(compute_pop, axis=1)
-    out = pivot[['geo', 'year', 'population']].rename(columns={'geo': 'departement', 'year': 'annee'})
-    # nettoyer departement codes : garder chaînes (ex '01','2A')
-    out['departement'] = out['departement'].astype(str).str.strip()
-    out['annee'] = out['annee'].astype(int)
-    out['population'] = out['population'].astype(int)
-    return out
-
-
-def main():
-    if not os.path.exists(INFILE):
-        print(f"Fichier introuvable: {INFILE}")
-        return 1
-    df = read_raw(INFILE)
-    df = clean_headers(df)
-    agg = aggregate_dept_year(df)
-    agg.to_csv(AGG_OUT, index=False, encoding='utf-8')
-    print(f"Agrégation département x année écrite: {AGG_OUT} (lignes: {len(agg)})")
-    # afficher quelques lignes d'exemple
-    print('\nExemples (premières lignes):')
-    print(agg.head(10).to_string(index=False))
-    return 0
-
-if __name__ == '__main__':
-    raise SystemExit(main())
+MERGE (f:Fait {id_fait: row.id_fait})
+SET f.nombre_faits = row.nombre_faits
+MERGE (d)-[:HAS_FACT]->(f)
+MERGE (f)-[:OF_INFRACTION]->(i)
+MERGE (f)-[:BY_SERVICE]->(s)
+MERGE (f)-[:IN_YEAR]->(t)
 ```
+## 4. Validation et Vérification de Cohérence
 
-## 4. Phase 3 : Processus de Migration vers Neo4j
-Cette phase est le cœur technique du projet. Elle consiste à transformer des lignes de données tabulaires en un réseau de connaissances interconnecté.
+Après migration, plusieurs contrôles ont été effectués :
 
-### 4.1 Stratégie de Transformation
-La migration ne se contente pas de copier les données ; elle les restructure selon la logique **"Whiteboard Design"** (modélisation directe des relations métier).
-* **Extraction :** Récupération des données nettoyées depuis le dossier `data/processed/`.
-* **Mapping :** Chaque ligne du CSV devient une relation `:ENREGISTRE` entre un nœud `:Service` et un nœud `:TypeCrime`.
-* **Enrichissement :** Injection des données d'adjacence pour lier les nœuds `:Departement` entre eux via la relation `:EST_LIMITROPHE`.
-
-### 4.2 Script de Migration (Cypher & LOAD CSV)
-Pour garantir l'efficacité, nous utilisons la version stable **Neo4j 1.5.9** (ou compatible) avec des contraintes d'unicité pour éviter les doublons.
+### 4.1 Vérification des volumes
 
 ```cypher
-// 1. Création des contraintes pour la performance
-CREATE CONSTRAINT ON (d:Departement) ASSERT d.code IS UNIQUE;
-CREATE CONSTRAINT ON (c:TypeCrime) ASSERT c.nom IS UNIQUE;
+MATCH (f:Fait) RETURN count(f);
+```
+Comparaison avec :
 
-// 2. Migration des données de crimes
-LOAD CSV WITH HEADERS FROM 'file:///synthese_crimes_2012_2021.csv' AS row
-MERGE (dep:Departement {code: row.code_dept})
-MERGE (crime:TypeCrime {nom: row.libelle_crime})
-CREATE (s:Service {type: row.type_service, nom: row.nom_service})
-CREATE (s)-[:EFFECTUE {annee: toInteger(row.annee), quantite: toInteger(row.valeur)}]->(crime)
-CREATE (s)-[:RATTACHE_A]->(dep);
+```SQL
+SELECT COUNT(*) FROM faits_criminels;
+```
+Résultat : `736 267`
+
+Les volumes sont identiques, confirmant la complétude de la migration.
+
+### 4.2 Vérification des faits orphelins
+
+```cypher
+MATCH (f:Fait)
+WHERE NOT ( (:Departement)-[:HAS_FACT]->(f) )
+RETURN count(f);
+```
+Résultat : `0`
+
+### 4.3 Test des requêtes métiers
+
+Exemple : 
+
+```cypher
+MATCH (d:Departement)-[:HAS_FACT]->(f:Fait)-[:OF_INFRACTION]->(i:Infraction)
+WITH d.code_dept AS departement,
+     i.libelle AS infraction,
+     SUM(f.nombre_faits) AS total
+RETURN departement, infraction, total
+ORDER BY total DESC;
 ```
 
 ## 5. Phase 5 : Rédaction et Présentation du Rapport Final
