@@ -95,6 +95,56 @@ JOIN dim_services ds
 
 
  Description de la bdd : 
- 
 
+## A reformuler
 
+Pour répondre à la phase 2 : 
+
+Limites typiques (à mettre dans ton rapport)
+
+Lisibilité : les requêtes “métier” demandent vite 4–6 jointures (FAITS + 3 dims + temps + population). Plus tu ajoutes des niveaux (région, commune, brigade…), plus ça devient illisible.
+
+Requêtes relationnelles complexes : “analyser connexions brigades↔départements↔infractions sur plusieurs années” = GROUP BY + JOIN + filtres + agrégats imbriqués.
+
+Évolution du modèle : ajouter “Région”, “Zone police/gendarmerie”, “Typologie d’infractions” → migration de schéma + rework de requêtes.
+
+Performance (cas graphe) : en relationnel, les analyses “parcours de relations” (ex. trouver des services qui opèrent sur plusieurs départements, réseaux d’interactions) deviennent coûteuses, alors qu’en graphe, la navigation par relations est native.
+
+Proposition de modèle graphe (Neo4j)
+Nœuds
+
+(:Infraction {id_infraction, libelle})
+
+(:Departement {code_dept})
+
+(:Service {id_service, type_service, nom_unite, perimetre})
+
+(:Annee {annee})
+
+(:Fait {id_fait, nombre_faits}) (option A, la plus “pure graph” pour tracer chaque mesure)
+
+(:Population {population}) (option A)
+
+Option B (souvent plus simple) : pas de nœud Fait/Population, mais des relations avec propriétés (ex: [:RECORDED {annee, nombre_faits}]). Je te donne les deux.
+
+Relations (Option A)
+
+(d:Departement)-[:HAS_FACT]->(f:Fait)
+
+(f)-[:OF_INFRACTION]->(i:Infraction)
+
+(f)-[:BY_SERVICE]->(s:Service)
+
+(f)-[:IN_YEAR]->(t:Annee)
+
+(d)-[:HAS_POP]->(p:Population)-[:IN_YEAR]->(t)
+
+Relations (Option B — recommandé pour ton sujet, plus léger)
+
+(s:Service)-[:OPERATES_IN]->(d:Departement) (déduite des faits)
+
+(d)-[:RECORDED {annee, nombre_faits, id_service}]->(i) (ou {annee, nombre_faits} + lien service séparé)
+
+(d)-[:POPULATION {annee, population}]->(:Annee) (ou vers Departement directement avec propriétés)
+
+Option B est souvent plus simple à requêter et plus rapide à importer.
