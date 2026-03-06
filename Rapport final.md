@@ -58,7 +58,7 @@ Le modèle doit permettre de répondre aux exigences métiers de la DGDSN :
 * **Axe de Performance :** Calculer des taux de criminalité grâce au croisement avec les données de population INSEE.
 
 
-![Modèle Conceptuel des Données - Analyse Crimes](./MCD.png)
+![Modèle Conceptuel des Données - Analyse Crimes](./MCD2.png)
 *Figure 1 : Modèle Conceptuel des Données (MCD) intégrant les statistiques 4001 et les données INSEE.*
 
 ### 2.3 Modèle Logique de Données (MLD)
@@ -228,4 +228,5 @@ L'analyse comparative démontre que le modèle Graphe est supérieur pour :
 ---
 
 ## Conclusion Générale
+
 La migration vers un modèle graphe ne constitue pas seulement un changement technique, mais une évolution stratégique. Elle permet au Ministère de l'Intérieur de passer d'une base de données statique à une **Base de Connaissances Active**, capable de révéler des patterns criminels invisibles dans une structure relationnelle classique.
